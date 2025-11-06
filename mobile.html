@@ -1,0 +1,801 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+	<head>
+		<meta charset="UTF-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+		<title></title>
+		<style>
+			* {
+				box-sizing: border-box;
+				margin: 0;
+				padding: 0;
+			}
+
+			body {
+				font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+				color: #ffffff;
+				min-height: 100dvh;
+				overflow: hidden;
+			}
+
+			body.is-mobile {
+				overflow-y: auto;
+			}
+
+			#board {
+				position: relative;
+				width: 100vw;
+				height: 100dvh;
+				overflow: hidden;
+			}
+
+			.card {
+				position: absolute;
+				width: 180px;
+				border-radius: 12px;
+				box-shadow: 0 12px 28px rgba(0, 0, 0, 0.18);
+				background: #fff;
+				border: 1px solid rgba(0, 0, 0, 0.08);
+				overflow: hidden;
+				opacity: 0;
+				transform-origin: center;
+				transition: transform 0.35s ease, opacity 0.35s ease, left 0.35s ease,
+					top 0.35s ease, width 0.35s ease, height 0.35s ease,
+					border-radius 0.35s ease;
+			}
+
+			.card.dragging {
+				transition: none;
+				box-shadow: 0 18px 36px rgba(0, 0, 0, 0.28);
+			}
+
+			.card.maximized {
+				box-shadow: 0 24px 48px rgba(0, 0, 0, 0.32);
+			}
+
+			.card-header {
+				display: none;
+			}
+
+			.card-body {
+				padding: 14px;
+				font-size: 15px;
+				line-height: 1.4;
+				font-weight: 600;
+				color: rgba(0, 0, 0, 0.7);
+				word-break: break-word;
+			}
+
+			@media (max-width: 480px) {
+				.card {
+					width: min(72vw, 170px);
+				}
+
+				.card-body {
+					padding: 12px;
+					font-size: 14px;
+				}
+
+				.card-title {
+					font-size: 11px;
+				}
+			}
+
+			/* 启动按钮样式 */
+			#startOverlay {
+				position: fixed;
+				top: 0;
+				left: 0;
+				width: 100vw;
+				height: 100vh;
+				background: rgba(0, 0, 0, 0.85);
+				display: flex;
+				flex-direction: column;
+				align-items: center;
+				justify-content: center;
+				z-index: 9999999;
+				backdrop-filter: blur(10px);
+			}
+
+			#startButton {
+				padding: 20px 50px;
+				font-size: 24px;
+				font-weight: bold;
+				color: #fff;
+				background: linear-gradient(135deg, #ff6b9d, #c44569);
+				border: none;
+				border-radius: 50px;
+				cursor: pointer;
+				box-shadow: 0 10px 30px rgba(255, 107, 157, 0.5);
+				transition: all 0.3s ease;
+				animation: pulse 2s ease-in-out infinite;
+			}
+
+			#startButton:active {
+				transform: scale(0.95);
+			}
+
+			@keyframes pulse {
+				0%, 100% {
+					transform: scale(1);
+				}
+				50% {
+					transform: scale(1.05);
+				}
+			}
+
+			#musicStatus {
+				position: fixed;
+				bottom: 20px;
+				right: 20px;
+				padding: 10px 20px;
+				background: rgba(0, 0, 0, 0.7);
+				color: #fff;
+				border-radius: 20px;
+				font-size: 14px;
+				z-index: 10000;
+				display: none;
+			}
+
+			#musicStatus.show {
+				display: block;
+			}
+		</style>
+	</head>
+	<body>
+		<!-- 启动界面 -->
+		<div id="startOverlay">	
+			<button id="startButton">开始体验</button>
+		</div>
+
+		<div id="board"></div>
+		<div id="musicStatus">🎵音乐播放中...</div>
+		<audio id="bgMusic" loop preload="auto">
+			<source src="background.mp3" type="audio/mpeg">
+		</audio>
+
+		<script>
+			const isMobileDevice =
+				window.matchMedia('(pointer: coarse)').matches ||
+				window.innerWidth <= 768
+
+			if (!isMobileDevice) {
+				window.location.replace('index.html')
+			}
+
+			const board = document.getElementById('board')
+			const messages = [
+				'保持好心情',
+				'多喝水哦',
+				'今天辛苦啦',
+				'早点休息',
+				'记得吃水果',
+				'少熬夜',
+				'永远陪着你',
+				'保持微笑呀',
+				'愿所有烦恼都消失',
+				'希望你做自己',
+				'梦想总会实现',
+				'相信自己',
+				'也希望你少生气',
+				'很多事情不要藏在心里',
+				'有你的日子最甜蜜',
+				'每天爱我多一点',
+				'和你一起变老',
+				'长大了一岁要更懂事了',
+				'也希望你脾气好一点',
+				'天气冷了，多穿衣服',
+				'记得给自己放松',
+				'每天都要元气满满',
+				'今天也要好好爱自己',
+				'适当休息一下',
+				'今天也要开心哦',
+				'记得早点睡觉',
+				'记得吃早餐'
+			]
+
+			const colors = [
+				// 粉色系
+				'#ffe0e3', // 浅粉
+				'#ffd4f5', // 粉紫
+				'#ffcce0', // 玫瑰粉
+				'#ffe5ec', // 樱花粉
+				'#ffd0e1', // 蜜桃粉
+				'#ffb8d1', // 热情粉
+				
+				// 蓝色系
+				'#c7f0ff', // 天蓝
+				'#d2f0f8', // 冰蓝
+				'#cfe2ff', // 浅蓝
+				'#d5e8ff', // 天空蓝
+				'#b8e6ff', // 清新蓝
+				'#c7deff', // 淡蓝
+				
+				// 橙色系
+				'#ffd8a8', // 浅橙
+				'#ffe4c4', // 杏仁色
+				'#ffdab9', // 桃色
+				'#ffead0', // 香槟色
+				'#ffecc7', // 奶油橙
+				
+				// 绿色系
+				'#d9f2d9', // 浅绿
+				'#dff5e1', // 薄荷绿
+				'#d4f1d4', // 清新绿
+				'#e5f9e7', // 嫩绿
+				'#d0f0d0', // 草绿
+				
+				// 紫色系
+				'#e5d7ff', // 浅紫
+				'#f0e5ff', // 淡紫
+				'#e9dcff', // 薰衣草紫
+				'#e0d1ff', // 梦幻紫
+				'#ead9ff', // 柔和紫
+				
+				// 黄色系
+				'#f9f7d9', // 浅黄
+				'#fff9db', // 奶黄
+				'#fef6d8', // 柠檬黄
+				'#fffacd', // 淡黄
+				'#ffefd5', // 香草黄
+				
+				// 其他温暖色系
+				'#ffe6f0', // 珊瑚粉
+				'#ffd5e5', // 甜心粉
+				'#d4f4ff', // 婴儿蓝
+				'#ffeef8', // 浪漫粉
+				'#e0f8f7', // 青瓷色
+				'#ffe8e0', // 杏桃色
+				'#f5e5ff', // 丁香紫
+				'#e8f8e8', // 翡翠绿
+				'#fff0e6', // 象牙色
+				'#f0f8ff', // 爱丽丝蓝
+				'#fef4f4', // 贝壳粉
+				'#f0fff0', // 蜜瓜绿
+				'#fff5f7', // 蔷薇粉
+				'#f0f0ff', // 幽灵白
+				'#fffaf0'  // 花白色
+			]
+
+			const cardStates = new WeakMap()
+			const MAXIMIZED_LAYER = 1000000
+			let activeMaximizedCard = null
+			let isMobile = true
+			const maxCards = 170
+			const spawnInterval = 100
+			const heartGatherDelay = 19000 // 23秒后开始汇聚
+			const heartAnimationDuration = 5000 // 8秒汇聚动画
+			const audioDuration = 33000 // 音频时长33秒
+			let zIndexCursor = 200
+			let animationTriggered = false
+			let currentAnimationTimeouts = [] // 存储当前动画的所有定时器
+
+			document.body.classList.add('is-mobile')
+
+			// 获取元素
+			const bgMusic = document.getElementById('bgMusic')
+			const startOverlay = document.getElementById('startOverlay')
+			const startButton = document.getElementById('startButton')
+			const musicStatus = document.getElementById('musicStatus')
+
+			let hasStarted = false
+
+			// 点击开始按钮
+			startButton.addEventListener('click', async () => {
+				if (hasStarted) return
+				hasStarted = true
+
+				try {
+					// 播放音乐
+					await bgMusic.play()
+					console.log('音乐开始播放')
+					
+					// 显示音乐状态
+					musicStatus.classList.add('show')
+					setTimeout(() => {
+						musicStatus.classList.remove('show')
+					}, 3000)
+
+					// 淡出启动界面
+					startOverlay.style.transition = 'opacity 0.5s ease'
+					startOverlay.style.opacity = '0'
+					setTimeout(() => {
+						startOverlay.style.display = 'none'
+					}, 500)
+
+					// 开始生成卡片
+					startCardGeneration()
+				} catch (error) {
+					console.error('音乐播放失败:', error)
+					alert('音频文件加载失败，请确保 background.mp3 文件存在')
+				}
+			})
+
+			// 监听音频错误
+			bgMusic.addEventListener('error', (e) => {
+				console.error('音频加载错误:', e)
+			})
+
+			// 监听音频播放状态
+			bgMusic.addEventListener('play', () => {
+				console.log('音频正在播放')
+			})
+
+			bgMusic.addEventListener('pause', () => {
+				console.log('音频已暂停')
+			})
+
+			// 监听音频播放进度，当音频循环时重置动画
+			let lastCurrentTime = 0
+			bgMusic.addEventListener('timeupdate', () => {
+				// 检测音频是否重新开始（从头播放）
+				if (lastCurrentTime > 30 && bgMusic.currentTime < 3) {
+					console.log('音频循环，重置动画')
+					resetAndRestartAnimation()
+				}
+				lastCurrentTime = bgMusic.currentTime
+			})
+
+			function randomFrom(array) {
+				return array[Math.floor(Math.random() * array.length)]
+			}
+
+			function clamp(value, min, max) {
+				return Math.min(Math.max(value, min), max)
+			}
+
+			function generateHeartPoints(count) {
+				const points = []
+				const centerX = window.innerWidth / 2
+				const centerY = window.innerHeight / 2
+
+				const scaleFromHeight = (window.innerHeight * 0.78) / 30
+				const maxWidth = window.innerWidth * 0.9
+				let scale = scaleFromHeight
+				if (scale * 32 > maxWidth) {
+					scale = maxWidth / 32
+				}
+
+				for (let i = 0; i < count; i++) {
+					const t = (i / count) * Math.PI * 2
+					const x = 16 * Math.pow(Math.sin(t), 3)
+					const y = -(13 * Math.cos(t) - 5 * Math.cos(2 * t) - 2 * Math.cos(3 * t) - Math.cos(4 * t))
+
+					points.push({
+						x: centerX + x * scale,
+						y: centerY + y * scale
+					})
+				}
+
+				return points
+			}
+
+			function triggerHeartAnimation() {
+				if (animationTriggered) return
+				animationTriggered = true
+
+				const cards = Array.from(document.querySelectorAll('.card'))
+				if (cards.length === 0) return
+
+				const heartPoints = generateHeartPoints(cards.length)
+				const centerX = window.innerWidth / 2
+				const centerY = window.innerHeight / 2
+
+				cards.forEach((card, index) => {
+					const state = cardStates.get(card)
+					if (!state || state.closing) return
+
+					const point = heartPoints[index % heartPoints.length]
+					const cardWidth = card.offsetWidth
+					const cardHeight = card.offsetHeight
+
+					card.style.pointerEvents = 'none'
+
+					card.style.transition = `transform ${heartAnimationDuration}ms ease-in-out, opacity ${heartAnimationDuration}ms ease-in-out, left ${heartAnimationDuration}ms ease-in-out, top ${heartAnimationDuration}ms ease-in-out`
+
+					state.left = point.x - cardWidth / 2
+					state.top = point.y - cardHeight / 2
+					state.scale = 0.3
+					state.angle = 0
+
+					card.style.left = `${state.left}px`
+					card.style.top = `${state.top}px`
+					applyTransform(card, state)
+				})
+
+				setTimeout(() => {
+					showFinalCard({ centerX, centerY })
+				}, heartAnimationDuration)
+			}
+
+			function showFinalCard({ centerX, centerY }) {
+				const card = document.createElement('div')
+				card.className = 'card final-card'
+
+				const cardWidth = 220
+
+				card.style.background = '#ff6b9d'
+				card.style.left = `${centerX - cardWidth / 2}px`
+				card.style.top = `${centerY}px`
+				card.style.width = `${cardWidth}px`
+				card.style.zIndex = MAXIMIZED_LAYER + 1
+				card.style.pointerEvents = 'all'
+				card.style.opacity = '0'
+				card.style.transition = 'transform 600ms ease, opacity 600ms ease, top 600ms ease'
+
+				card.innerHTML = `
+					<div class="card-body" style="font-size: 24px; font-weight: bold; text-align: center; color: #fff; padding: 24px;">永远爱你</div>
+				`
+
+				const state = {
+					angle: 0,
+					scale: 0.45,
+					translateX: 0,
+					translateY: 0,
+					left: centerX - cardWidth / 2,
+					top: centerY,
+					maximized: false,
+					closing: false
+				}
+
+				cardStates.set(card, state)
+				applyTransform(card, state)
+				board.appendChild(card)
+
+				requestAnimationFrame(() => {
+					const cardHeight = card.offsetHeight || 0
+					const targetTop = centerY - cardHeight / 2
+
+					state.top = targetTop
+					card.style.top = `${state.top}px`
+
+					state.scale = 1.05
+					applyTransform(card, state)
+					card.style.opacity = '1'
+
+					setTimeout(() => {
+						state.scale = 1
+						applyTransform(card, state)
+					}, 420)
+				})
+
+				// 点击卡片关闭
+				card.addEventListener('click', event => {
+					event.stopPropagation()
+					card.style.opacity = '0'
+					setTimeout(() => card.remove(), 350)
+				})
+			}
+
+			function applyTransform(card, state) {
+				const scale = state.scale ?? 1
+				const translateX = state.translateX ?? 0
+				const translateY = state.translateY ?? 0
+				const angle = state.angle ?? 0
+				card.style.transform = `translate(${translateX}px, ${translateY}px) scale(${scale}) rotate(${angle}deg)`
+			}
+
+			function bringToFront(card) {
+				if (card === activeMaximizedCard) {
+					card.style.zIndex = MAXIMIZED_LAYER
+					return
+				}
+
+				zIndexCursor += 1
+				if (activeMaximizedCard && zIndexCursor >= MAXIMIZED_LAYER) {
+					zIndexCursor = MAXIMIZED_LAYER - 1
+				}
+
+				card.style.zIndex = zIndexCursor
+			}
+
+			function setupCardInteractions(card) {
+				// 卡片点击提升层级
+				card.addEventListener('pointerdown', () => {
+					bringToFront(card)
+				})
+
+				// 长按关闭卡片（移动端）
+				let pressTimer = null
+				card.addEventListener('touchstart', event => {
+					pressTimer = setTimeout(() => {
+						closeCard(card)
+					}, 800) // 长按800ms关闭
+				})
+
+				card.addEventListener('touchend', () => {
+					if (pressTimer) {
+						clearTimeout(pressTimer)
+						pressTimer = null
+					}
+				})
+
+				card.addEventListener('touchmove', () => {
+					if (pressTimer) {
+						clearTimeout(pressTimer)
+						pressTimer = null
+					}
+				})
+			}
+
+			function closeCard(card) {
+				const state = cardStates.get(card)
+				if (!state || state.closing) return
+				if (card === activeMaximizedCard) {
+					activeMaximizedCard = null
+				}
+				state.closing = true
+				state.scale = 0.1
+				card.style.opacity = '0'
+				applyTransform(card, state)
+
+				const handleTransitionEnd = event => {
+					if (event.propertyName === 'opacity') {
+						card.removeEventListener('transitionend', handleTransitionEnd)
+						card.remove()
+					}
+				}
+
+				card.addEventListener('transitionend', handleTransitionEnd)
+			}
+
+			function minimizeCard(card) {
+				const state = cardStates.get(card)
+				if (!state || state.closing) return
+
+				const runMinimize = () => {
+					state.closing = true
+					bringToFront(card)
+					const bottom = Math.max(window.innerHeight - 24, 0)
+					const targetLeft = clamp(
+						state.left,
+						10,
+						Math.max(window.innerWidth - card.offsetWidth - 10, 10)
+					)
+
+					state.left = targetLeft
+					state.top = bottom
+					state.scale = 0.12
+					state.angle = 0
+					card.style.left = `${targetLeft}px`
+					card.style.top = `${bottom}px`
+					card.style.opacity = '0.35'
+					applyTransform(card, state)
+
+					const handleTransitionEnd = event => {
+						if (event.propertyName === 'transform') {
+							card.removeEventListener('transitionend', handleTransitionEnd)
+							card.remove()
+						}
+					}
+
+					card.addEventListener('transitionend', handleTransitionEnd)
+				}
+
+				if (state.maximized) {
+					activeMaximizedCard = null
+					state.maximized = false
+					card.classList.remove('maximized')
+					card.style.borderRadius = '12px'
+					state.left = 0
+					state.top = 0
+					state.scale = 1
+					state.angle = 0
+					applyTransform(card, state)
+
+					requestAnimationFrame(() => {
+						requestAnimationFrame(runMinimize)
+					})
+					return
+				}
+
+				runMinimize()
+			}
+
+			function toggleMaximize(card) {
+				const state = cardStates.get(card)
+				if (!state || state.closing) return
+
+				if (state.maximized) {
+					restoreFromMaximize(card, state)
+				} else {
+					maximizeCard(card, state)
+				}
+			}
+
+			function maximizeCard(card, state) {
+				state.beforeMaximize = {
+					left: state.left,
+					top: state.top,
+					scale: state.scale ?? 1,
+					width: card.offsetWidth,
+					height: card.offsetHeight,
+					angle: state.angle ?? 0
+				}
+
+				card.classList.add('maximized')
+				card.style.left = '0px'
+				card.style.top = '0px'
+				card.style.width = `${window.innerWidth}px`
+				card.style.height = `${window.innerHeight}px`
+				card.style.borderRadius = '0'
+
+				state.left = 0
+				state.top = 0
+				state.scale = 1
+				state.angle = 0
+				applyTransform(card, state)
+				activeMaximizedCard = card
+				bringToFront(card)
+				state.maximized = true
+			}
+
+			function restoreFromMaximize(card, state) {
+				const previous = state.beforeMaximize
+				if (!previous) return
+
+				card.classList.remove('maximized')
+				card.style.left = `${previous.left}px`
+				card.style.top = `${previous.top}px`
+				card.style.width = `${previous.width}px`
+				card.style.height = `${previous.height}px`
+				card.style.borderRadius = '12px'
+
+				state.left = previous.left
+				state.top = previous.top
+				state.scale = previous.scale ?? 1
+				state.angle = previous.angle ?? state.angle ?? 0
+				applyTransform(card, state)
+				state.maximized = false
+				if (activeMaximizedCard === card) {
+					activeMaximizedCard = null
+				}
+				bringToFront(card)
+				state.lastPosition = { left: state.left, top: state.top }
+
+				setTimeout(() => {
+					if (!state.maximized) {
+						card.style.width = ''
+						card.style.height = ''
+						state.width = card.offsetWidth
+						state.height = card.offsetHeight
+					}
+				}, 360)
+			}
+
+
+			function createCard() {
+				const card = document.createElement('div')
+				card.className = 'card'
+
+				const color = randomFrom(colors)
+				const angle = (Math.random() - 0.5) * 8
+				const cardWidth = 180
+				const cardHeight = 122
+				const horizontalMargin = 10
+				const verticalMargin = 10
+				const left =
+					horizontalMargin +
+					Math.random() *
+						Math.max(window.innerWidth - cardWidth - horizontalMargin * 2, 0)
+				const top =
+					verticalMargin +
+					Math.random() *
+						Math.max(window.innerHeight - cardHeight - verticalMargin * 2, 0)
+
+				card.style.background = color
+				card.style.left = `${left}px`
+				card.style.top = `${top}px`
+				if (activeMaximizedCard && zIndexCursor >= MAXIMIZED_LAYER - 2) {
+					zIndexCursor = MAXIMIZED_LAYER - 2
+				}
+				card.style.zIndex = ++zIndexCursor
+
+				card.innerHTML = `
+					<div class="card-body">${randomFrom(messages)}</div>
+				`
+
+				const state = {
+					angle,
+					scale: 0.9,
+					translateX: 0,
+					translateY: 0,
+					left,
+					top,
+					maximized: false,
+					closing: false,
+					lastPosition: { left, top }
+				}
+
+				cardStates.set(card, state)
+				applyTransform(card, state)
+				board.appendChild(card)
+
+				state.width = card.offsetWidth
+				state.height = card.offsetHeight
+
+				requestAnimationFrame(() => {
+					state.scale = 1
+					applyTransform(card, state)
+					card.style.opacity = '1'
+				})
+
+				setupCardInteractions(card)
+
+				if (board.children.length > maxCards) {
+					const oldest = board.firstElementChild
+					if (oldest && oldest !== card) {
+						oldest.remove()
+					}
+				}
+			}
+
+			// 开始生成卡片的函数
+			function startCardGeneration() {
+				// 清空之前的定时器
+				currentAnimationTimeouts.forEach(timeout => clearTimeout(timeout))
+				currentAnimationTimeouts = []
+
+				// 按均匀节奏生成卡片直到汇聚开始
+				for (let delay = 0; delay < heartGatherDelay; delay += spawnInterval) {
+					const timeout = setTimeout(() => {
+						if (!animationTriggered) {
+							createCard()
+						}
+					}, delay)
+					currentAnimationTimeouts.push(timeout)
+				}
+
+				// 到达汇聚时间后触发爱心动画
+				const heartTimeout = setTimeout(() => {
+					triggerHeartAnimation()
+				}, heartGatherDelay)
+				currentAnimationTimeouts.push(heartTimeout)
+			}
+
+			// 重置并重新开始动画
+			function resetAndRestartAnimation() {
+				// 清除所有定时器
+				currentAnimationTimeouts.forEach(timeout => clearTimeout(timeout))
+				currentAnimationTimeouts = []
+
+				// 重置动画标志
+				animationTriggered = false
+
+				// 清除所有卡片
+				const allCards = document.querySelectorAll('.card')
+				allCards.forEach(card => {
+					card.style.transition = 'opacity 0.3s ease'
+					card.style.opacity = '0'
+					setTimeout(() => card.remove(), 300)
+				})
+
+				// 重置 zIndex
+				zIndexCursor = 200
+				activeMaximizedCard = null
+
+				// 延迟一点后重新开始动画
+				setTimeout(() => {
+					startCardGeneration()
+				}, 500)
+			}
+
+			window.addEventListener('resize', () => {
+				const stillMobile =
+					window.matchMedia('(pointer: coarse)').matches ||
+					window.innerWidth <= 768
+				if (!stillMobile) {
+					window.location.replace('index.html')
+					return
+				}
+
+				document.body.classList.add('is-mobile')
+
+				document.querySelectorAll('.card.maximized').forEach(card => {
+					card.style.width = `${window.innerWidth}px`
+					card.style.height = `${window.innerHeight}px`
+				})
+			})
+		</script>
+	</body>
+</html>
